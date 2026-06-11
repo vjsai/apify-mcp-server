@@ -241,6 +241,52 @@ describe('generateSchemaFromItems — options', () => {
     });
 });
 
+describe('generateSchemaFromItems — depth cap', () => {
+    // Calibration probe (#882): unbounded recursion blew Facebook-posts schemas to ~15 KB
+    // via deep subtrees (`sharedPost`, `media`). Values deeper than maxDepth collapse to a bare type.
+    it('collapses objects deeper than the default maxDepth to a bare object type', () => {
+        const result = generateSchemaFromItems([{ a: { b: { c: { d: 1 } } } }]);
+        const c = props(result)!.a?.properties?.b?.properties?.c;
+        expect(c?.type).toBe('object');
+        expect(c?.properties).toBeUndefined();
+    });
+
+    it('collapses arrays deeper than the default maxDepth to a bare array type', () => {
+        const result = generateSchemaFromItems([{ a: { b: { c: [1, 2] } } }]);
+        const c = props(result)!.a?.properties?.b?.properties?.c;
+        expect(c?.type).toBe('array');
+        expect(c?.items).toBeUndefined();
+    });
+
+    it('keeps everything above the cap fully described', () => {
+        const result = generateSchemaFromItems([{ a: { b: { s: 'x', n: 1 } } }]);
+        const b = props(result)!.a?.properties?.b;
+        expect(b?.properties?.s?.type).toBe('string');
+        expect(b?.properties?.n?.type).toBe('integer');
+    });
+
+    it('counts array nesting toward the depth', () => {
+        const result = generateSchemaFromItems([{ a: [{ b: { c: 1 } }] }]);
+        const b = props(result)!.a?.items?.properties?.b;
+        expect(b?.type).toBe('object');
+        expect(b?.properties).toBeUndefined();
+    });
+
+    it('respects a custom maxDepth', () => {
+        const result = generateSchemaFromItems([{ a: { b: 1 } }], { maxDepth: 1 });
+        const { a } = props(result)!;
+        expect(a?.type).toBe('object');
+        expect(a?.properties).toBeUndefined();
+    });
+
+    it('merges capped and uncapped schemas across items without resurrecting depth', () => {
+        const result = generateSchemaFromItems([{ a: { b: { c: { d: 1 } } } }, { a: { b: { c: { e: 'x' } } } }]);
+        const c = props(result)!.a?.properties?.b?.properties?.c;
+        expect(c?.type).toBe('object');
+        expect(c?.properties).toBeUndefined();
+    });
+});
+
 describe('generateSchemaFromItems — user-reported regression', () => {
     it('emits all four top-level keys from the NYC sushi dataset sample', () => {
         const items = [

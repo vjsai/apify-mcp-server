@@ -8,7 +8,7 @@ import { compileSchema } from '../../utils/ajv.js';
 import { stripQuoteWrappers } from '../../utils/generic.js';
 import { getHttpStatusCode } from '../../utils/logging.js';
 import { buildMCPResponse } from '../../utils/mcp.js';
-import { generateSchemaFromItems } from '../../utils/schema_generation.js';
+import { DEFAULT_MAX_SCHEMA_DEPTH, generateSchemaFromItems } from '../../utils/schema_generation.js';
 import { datasetSchemaOutputSchema } from '../structured_output_schemas.js';
 import { buildStorageNotFound, buildStorageResponse } from './storage_helpers.js';
 
@@ -36,6 +36,7 @@ export const getDatasetSchema: ToolEntry = Object.freeze({
         Generate a JSON schema from a sample of dataset items.
         The schema describes the structure of the data and can be used for validation, documentation, or processing.
         Use this to understand the dataset before fetching many items.
+        Nesting is described up to ${DEFAULT_MAX_SCHEMA_DEPTH} levels deep; deeper objects/arrays appear as a bare type.
 
         USAGE:
         - Use when you need to infer the structure of dataset items for downstream processing or validation.

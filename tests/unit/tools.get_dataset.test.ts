@@ -54,6 +54,29 @@ describe('get-dataset', () => {
         expect(content[0].text).toContain("Dataset 'missing' not found");
     });
 
+    it('strips the raw schema field from the response', async () => {
+        // Calibration probe (#882): raw `dataset.schema` was 93–95% of the response bytes on
+        // top store Actors and declares fields absent from the data. get-dataset-schema is
+        // the schema source; this tool returns metadata only.
+        const result = await (getDataset as HelperTool).call(
+            stubToolCallContext(
+                { datasetId: 'ds-1' },
+                stubApifyClient({ ...MOCK_DATASET, schema: { fields: {}, views: {} } }),
+            ),
+        );
+        const { structuredContent } = result as { structuredContent: Record<string, unknown> };
+        expect(structuredContent).not.toHaveProperty('schema');
+        expect(structuredContent).toMatchObject(MOCK_DATASET);
+    });
+
+    it('points nextStep at get-dataset-schema for structure inference', async () => {
+        const result = await (getDataset as HelperTool).call(
+            stubToolCallContext({ datasetId: 'ds-1' }, stubApifyClient(MOCK_DATASET)),
+        );
+        const { structuredContent } = result as { structuredContent: { nextStep: string } };
+        expect(structuredContent.nextStep).toContain(HelperTools.DATASET_SCHEMA_GET);
+    });
+
     it('rejects empty datasetId via ajv validation', () => {
         const tool = getDataset as HelperTool;
         expect(tool.ajvValidate({ datasetId: '' })).toBe(false);

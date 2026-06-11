@@ -22,8 +22,9 @@ export const getDataset: ToolEntry = Object.freeze({
     name: HelperTools.DATASET_GET,
     description: dedent`
         Get metadata for a dataset (collection of structured data created by an Actor run).
-        The results will include dataset details such as itemCount, schema, fields, and stats.
+        The results will include dataset details such as itemCount, fields, and stats.
         Use fields to understand structure for filtering with ${HelperTools.DATASET_GET_ITEMS}.
+        For a JSON schema of the item structure, use ${HelperTools.DATASET_SCHEMA_GET}.
         Note: itemCount updates may be delayed by up to ~5 seconds.
 
         USAGE:
@@ -51,6 +52,10 @@ export const getDataset: ToolEntry = Object.freeze({
         if (!dataset) {
             return buildStorageNotFound(`Dataset '${datasetId}' not found.`);
         }
+        // The API also returns a raw `schema` (untyped in apify-client). It is 93–95% of the
+        // response bytes on top store Actors and declares fields that may be absent from the
+        // data, so drop it — get-dataset-schema infers a compact schema from real items (#882).
+        const { schema, ...metadata } = dataset as typeof dataset & { schema?: unknown };
         // Apify returns `fields` slash-separated AND with array indices expanded
         // (e.g. `latestComments/0/owner/username`). For a real Instagram-scraper
         // dataset this inflates ~78 schema fields into 528 paths (~85% bloat) and
@@ -58,10 +63,12 @@ export const getDataset: ToolEntry = Object.freeze({
         // hints for `get-dataset-items` (which expects dot-notation). Run the same
         // normalization `buildRunDataset` applies so this tool's `fields` matches
         // the structured `storages.datasets.default.fields` shape.
-        const normalized = dataset.fields ? { ...dataset, fields: normalizeDatasetFields(dataset.fields) } : dataset;
+        const normalized = metadata.fields
+            ? { ...metadata, fields: normalizeDatasetFields(metadata.fields) }
+            : metadata;
         const fieldCount = Array.isArray(normalized.fields) ? normalized.fields.length : undefined;
         const summary = `Dataset '${normalized.name ?? datasetId}' has ${normalized.itemCount ?? 0} items${fieldCount !== undefined ? `, ${fieldCount} fields` : ''}.`;
-        const nextStep = `Use ${HelperTools.DATASET_GET_ITEMS} with datasetId=${datasetId} and limit (for example 20) to fetch items.`;
+        const nextStep = `Use ${HelperTools.DATASET_GET_ITEMS} with datasetId=${datasetId} and limit (for example 20) to fetch items, or ${HelperTools.DATASET_SCHEMA_GET} to infer item structure.`;
         return buildStorageResponse({
             structuredContent: normalized as unknown as Record<string, unknown>,
             summary,

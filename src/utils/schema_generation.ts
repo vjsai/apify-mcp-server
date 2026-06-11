@@ -19,7 +19,14 @@ export type SchemaGenerationOptions = {
     limit?: number;
     /** If true, strips empty arrays from items before inference. Default is true. */
     clean?: boolean;
+    /**
+     * Maximum nesting depth described in the schema; objects/arrays deeper than this collapse
+     * to a bare `{ type }`. Caps token cost on deeply nested items (#882). Default is 3.
+     */
+    maxDepth?: number;
 };
+
+export const DEFAULT_MAX_SCHEMA_DEPTH = 3;
 
 /**
  * Local counterpart to the dataset API's `clean=true` — empty arrays carry no schema info.
@@ -101,23 +108,25 @@ function inferType(value: unknown): JsonSchemaPrimitiveType {
     return 'object';
 }
 
-function inferSchema(value: unknown): JsonSchemaProperty {
+function inferSchema(value: unknown, depth: number, maxDepth: number): JsonSchemaProperty {
     const type = inferType(value);
 
     if (type === 'object') {
+        if (depth >= maxDepth) return { type: 'object' };
         const entries = Object.entries(value as Record<string, unknown>);
         if (entries.length === 0) return { type: 'object' };
         const properties: Record<string, JsonSchemaProperty> = {};
         for (const [k, v] of entries) {
-            properties[k] = inferSchema(v);
+            properties[k] = inferSchema(v, depth + 1, maxDepth);
         }
         return { type: 'object', properties };
     }
 
     if (type === 'array') {
+        if (depth >= maxDepth) return { type: 'array' };
         const arr = value as unknown[];
         if (arr.length === 0) return { type: 'array' };
-        const merged = arr.map(inferSchema).reduce(mergeSchemas);
+        const merged = arr.map((v) => inferSchema(v, depth + 1, maxDepth)).reduce(mergeSchemas);
         return { type: 'array', items: merged };
     }
 
@@ -182,14 +191,14 @@ export function generateSchemaFromItems(
     datasetItems: unknown[],
     options: SchemaGenerationOptions = {},
 ): JsonSchemaArray | null {
-    const { limit = 5, clean = true } = options;
+    const { limit = 5, clean = true, maxDepth = DEFAULT_MAX_SCHEMA_DEPTH } = options;
 
     const itemsToUse = datasetItems.slice(0, limit);
     if (itemsToUse.length === 0) return null;
 
     const processed = clean ? itemsToUse.map(cleanEmptyArrays) : itemsToUse;
 
-    const itemSchemas = processed.map(inferSchema);
+    const itemSchemas = processed.map((item) => inferSchema(item, 0, maxDepth));
     const merged = itemSchemas.reduce(mergeSchemas);
 
     return { type: 'array', items: merged };

@@ -7,7 +7,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import type { ApifyClient } from '../apify_client.js';
-import { HTTP_NOT_FOUND } from '../const.js';
+import { HTTP_NOT_FOUND, KV_RECORD_MAX_INLINE_BYTES } from '../const.js';
 import { extractDotPrefixes } from '../tools/common/get_dataset_items.js';
 import { normalizeRecordKey } from '../tools/common/storage_helpers.js';
 import { parseCommaSeparatedList, stripQuoteWrappers } from '../utils/generic.js';
@@ -264,6 +264,26 @@ async function readKeyValueStoreRecord(
     if (value === undefined) return buildTextResult(uri, '');
     if (Buffer.isBuffer(value)) {
         const mimeType = contentType?.split(';')[0].trim().toLowerCase();
+        // Inlining a large binary as base64 would blow up the client's context, so above the inline limit
+        // link out to the record instead — mirroring the get-key-value-store-record tool. resources/read has
+        // no resource_link content type, so the link rides in a JSON text block carrying the same fields.
+        if (value.length > KV_RECORD_MAX_INLINE_BYTES) {
+            const recordPublicUrl = await store.getRecordPublicUrl(recordKey);
+            return {
+                contents: [
+                    {
+                        uri,
+                        mimeType: JSON_MIME_TYPE,
+                        text: JSON.stringify({
+                            recordKey,
+                            size: value.length,
+                            ...(mimeType && { mimeType }),
+                            recordPublicUrl,
+                        }),
+                    } satisfies TextResourceContents,
+                ],
+            };
+        }
         return {
             contents: [
                 {

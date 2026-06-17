@@ -2,6 +2,7 @@ import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
 
 import type { ApifyClient } from '../../src/apify_client.js';
+import { KV_RECORD_MAX_INLINE_BYTES } from '../../src/const.js';
 import {
     isStorageUri,
     listStorageResources,
@@ -20,6 +21,7 @@ type StubOptions = {
     listItems?: (...args: unknown[]) => unknown;
     listKeys?: (...args: unknown[]) => unknown;
     getRecord?: (...args: unknown[]) => unknown;
+    getRecordPublicUrl?: (...args: unknown[]) => unknown;
     getStore?: (...args: unknown[]) => unknown;
 };
 
@@ -33,6 +35,9 @@ function stubApifyClient(opts: StubOptions = {}): ApifyClient {
         keyValueStore: (id: string) => ({
             listKeys: opts.listKeys ?? (async () => ({ count: 0, items: [], isTruncated: false })),
             getRecord: opts.getRecord ?? (async () => undefined),
+            getRecordPublicUrl:
+                opts.getRecordPublicUrl ??
+                (async (key: string) => `https://api.apify.com/v2/key-value-stores/${id}/records/${key}`),
             get: opts.getStore ?? (async () => ({ id })),
         }),
     } as unknown as ApifyClient;
@@ -264,6 +269,28 @@ describe('readStorageResource()', () => {
             expect(contents.mimeType).toBe('image/png');
             expect(contents.blob).toBe(Buffer.from('binary-data').toString('base64'));
             expect(contents).not.toHaveProperty('text');
+        });
+
+        it('returns a public-URL link instead of inlining a binary above the size limit', async () => {
+            // Inlining a multi-MB blob as base64 would blow up the client's context; link out instead.
+            const oversized = Buffer.alloc(KV_RECORD_MAX_INLINE_BYTES + 1);
+            const client = stubApifyClient({
+                getRecord: async () => ({ key: 'BIG', value: oversized, contentType: 'application/octet-stream' }),
+                getRecordPublicUrl: async (...args: unknown[]) =>
+                    `https://api.apify.com/v2/key-value-stores/kv-1/records/${args[0] as string}?signature=abc`,
+            });
+
+            const result = await readStorageResource('apify://key-value-stores/kv-1/records/BIG', client);
+
+            const contents = firstContent(result);
+            expect(contents.mimeType).toBe('application/json');
+            expect(contents).not.toHaveProperty('blob');
+            expect(JSON.parse(contents.text as string)).toEqual({
+                recordKey: 'BIG',
+                size: KV_RECORD_MAX_INLINE_BYTES + 1,
+                mimeType: 'application/octet-stream',
+                recordPublicUrl: 'https://api.apify.com/v2/key-value-stores/kv-1/records/BIG?signature=abc',
+            });
         });
 
         it('returns empty text for a record with an empty body', async () => {

@@ -25,7 +25,10 @@ templates (`resources/templates/list`):
 
 `resources/list` adds concrete URIs for the user's recent datasets/stores
 (`desc: true`, bounded). Contents are `application/json` for items/keys; records keep
-their `contentType` (binary → base64 `blob`). Best-effort: no token / API error →
+their `contentType` (binary → base64 `blob`). A binary record over
+`KV_RECORD_MAX_INLINE_BYTES` (256 KB) links out instead of inlining: a JSON text block
+with the record's public URL (`resources/read` has no `resource_link` content type),
+mirroring the `get-key-value-store-record` tool. Best-effort: no token / API error →
 list omits storage; an unreadable read returns an explanatory `text` block, never an
 error. Reuses the storage tools' arg-parsing helpers and 404→soft-fail pattern; it
 does **not** share their response builders (resources need `ReadResourceResult`).

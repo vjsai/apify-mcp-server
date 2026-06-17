@@ -146,7 +146,7 @@ describe('createResourceService()', () => {
     });
 
     describe('listResourceTemplates()', () => {
-        it('returns an empty list', async () => {
+        it('returns the storage resource templates', async () => {
             const service = createResourceService({
                 getMode: () => 'default',
                 getAvailableWidgets: () => new Map(),
@@ -154,7 +154,11 @@ describe('createResourceService()', () => {
 
             const result = await service.listResourceTemplates();
 
-            expect(result).toEqual({ resourceTemplates: [] });
+            expect(result.resourceTemplates.map((template) => template.uriTemplate)).toEqual([
+                'apify://datasets/{datasetId}/items{?offset,limit,fields,omit,clean,desc}',
+                'apify://key-value-stores/{keyValueStoreId}/keys{?exclusiveStartKey,limit}',
+                'apify://key-value-stores/{keyValueStoreId}/records/{recordKey}',
+            ]);
         });
     });
 });

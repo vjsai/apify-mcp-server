@@ -8,8 +8,15 @@ import type {
 
 import log from '@apify/log';
 
+import type { ApifyClient } from '../apify_client.js';
 import type { PaymentProvider } from '../payments/types.js';
 import { ServerMode } from '../types.js';
+import {
+    isStorageUri,
+    listStorageResources,
+    readStorageResource,
+    STORAGE_RESOURCE_TEMPLATES,
+} from './storage_resources.js';
 import type { AvailableWidget } from './widgets.js';
 import { RESOURCE_MIME_TYPE } from './widgets.js';
 
@@ -23,8 +30,8 @@ type ExtendedReadResourceResult = Omit<ReadResourceResult, 'contents'> & {
 };
 
 type ResourceService = {
-    listResources: () => Promise<ListResourcesResult>;
-    readResource: (uri: string) => Promise<ExtendedReadResourceResult>;
+    listResources: (apifyClient?: ApifyClient) => Promise<ListResourcesResult>;
+    readResource: (uri: string, apifyClient?: ApifyClient) => Promise<ExtendedReadResourceResult>;
     listResourceTemplates: () => Promise<ListResourceTemplatesResult>;
 };
 
@@ -44,7 +51,7 @@ type ResourceServiceOptions = {
 export function createResourceService(options: ResourceServiceOptions): ResourceService {
     const { paymentProvider, getMode, getAvailableWidgets } = options;
 
-    const listResources = async (): Promise<ListResourcesResult> => {
+    const listResources = async (apifyClient?: ApifyClient): Promise<ListResourcesResult> => {
         const resources: Resource[] = [];
 
         if (paymentProvider?.getUsageGuide?.()) {
@@ -73,10 +80,17 @@ export function createResourceService(options: ResourceServiceOptions): Resource
             }
         }
 
+        resources.push(...(await listStorageResources(apifyClient)));
+
         return { resources };
     };
 
-    const readResource = async (uri: string): Promise<ExtendedReadResourceResult> => {
+    const readResource = async (uri: string, apifyClient?: ApifyClient): Promise<ExtendedReadResourceResult> => {
+        if (isStorageUri(uri)) {
+            // Storage contents carry no widget `_meta`/`html`; the extended shape only adds optional fields.
+            return (await readStorageResource(uri, apifyClient)) as ExtendedReadResourceResult;
+        }
+
         const usageGuide = paymentProvider?.getUsageGuide?.();
         if (usageGuide && uri === 'file://readme.md') {
             return {
@@ -159,7 +173,7 @@ export function createResourceService(options: ResourceServiceOptions): Resource
     };
 
     const listResourceTemplates = async (): Promise<ListResourceTemplatesResult> => ({
-        resourceTemplates: [],
+        resourceTemplates: STORAGE_RESOURCE_TEMPLATES,
     });
 
     return {

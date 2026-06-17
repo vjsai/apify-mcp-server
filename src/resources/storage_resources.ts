@@ -260,6 +260,8 @@ async function readKeyValueStoreRecord(
     // The SDK already parsed the body by Content-Type (JSON -> object, text/xml -> string, else -> Buffer);
     // branch on the resulting JS type, not on the MIME type.
     const { value, contentType } = record;
+    // apify-client maps an empty record body to `undefined`; emit empty text (an empty OUTPUT is legitimate).
+    if (value === undefined) return buildTextResult(uri, '');
     if (Buffer.isBuffer(value)) {
         const mimeType = contentType?.split(';')[0].trim().toLowerCase();
         return {

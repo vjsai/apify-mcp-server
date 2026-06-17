@@ -266,6 +266,18 @@ describe('readStorageResource()', () => {
             expect(contents).not.toHaveProperty('text');
         });
 
+        it('returns empty text for a record with an empty body', async () => {
+            // apify-client maps an empty record body to `undefined` (e.g. an Actor that writes an empty OUTPUT).
+            const client = stubApifyClient({
+                getRecord: async () => ({ key: 'OUTPUT', value: undefined, contentType: 'application/json' }),
+            });
+
+            const result = await readStorageResource('apify://key-value-stores/kv-1/records/OUTPUT', client);
+
+            expect(firstContent(result).text).toBe('');
+            expect(firstContent(result)).not.toHaveProperty('blob');
+        });
+
         it('URL-decodes the record key before lookup', async () => {
             let receivedKey: string | undefined;
             const client = stubApifyClient({

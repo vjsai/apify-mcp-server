@@ -2134,48 +2134,49 @@ export function createIntegrationTestsSuite(options: IntegrationTestsSuiteOption
                     await client.close();
                 });
 
-                it('lists the three storage resource templates via resources/templates/list', async () => {
+                it('lists the three Apify API resource templates via resources/templates/list', async () => {
                     client = await createClientFn({ tools: ['storage'] });
                     const result = await client.listResourceTemplates();
                     const templateUris = result.resourceTemplates.map((template) => template.uriTemplate);
                     expect(templateUris).toContain(
-                        'apify://datasets/{datasetId}/items{?offset,limit,fields,omit,clean,desc}',
+                        'https://api.apify.com/v2/datasets/{datasetId}/items{?format,clean,offset,limit,fields,omit,desc}',
                     );
                     expect(templateUris).toContain(
-                        'apify://key-value-stores/{keyValueStoreId}/keys{?exclusiveStartKey,limit}',
+                        'https://api.apify.com/v2/key-value-stores/{keyValueStoreId}/keys{?exclusiveStartKey,limit}',
                     );
-                    expect(templateUris).toContain('apify://key-value-stores/{keyValueStoreId}/records/{recordKey}');
+                    expect(templateUris).toContain(
+                        'https://api.apify.com/v2/key-value-stores/{keyValueStoreId}/records/{recordKey}',
+                    );
                     await client.close();
                 });
 
-                it('lists the run dataset and KV store via resources/list', async () => {
+                it('lists the run dataset and KV store as Apify API URLs via resources/list', async () => {
                     client = await createClientFn({ tools: ['storage'] });
                     const result = await client.listResources();
                     const uris = result.resources.map((resource) => resource.uri);
                     // desc=true in the recent list → the run's storages are on page 1.
-                    expect(uris).toContain(`apify://datasets/${datasetId}/items`);
-                    expect(uris).toContain(`apify://key-value-stores/${defaultKvId}/keys`);
+                    expect(uris).toContain(`https://api.apify.com/v2/datasets/${datasetId}/items?limit=20`);
+                    expect(uris).toContain(`https://api.apify.com/v2/key-value-stores/${defaultKvId}/keys`);
                     await client.close();
                 });
 
                 it('reads dataset items via resources/read', async () => {
                     client = await createClientFn({ tools: ['storage'] });
-                    const result = await client.readResource({ uri: `apify://datasets/${datasetId}/items?limit=5` });
+                    const result = await client.readResource({
+                        uri: `https://api.apify.com/v2/datasets/${datasetId}/items?limit=5`,
+                    });
                     const contents = result.contents[0] as { mimeType?: string; text?: string };
                     expect(contents.mimeType).toBe('application/json');
-                    const payload = JSON.parse(contents.text as string) as {
-                        datasetId: string;
-                        items: unknown[];
-                    };
-                    expect(payload.datasetId).toBe(datasetId);
-                    expect(Array.isArray(payload.items)).toBe(true);
+                    // The generic proxy returns the raw API body — a bare JSON array of items.
+                    const items = JSON.parse(contents.text as string) as unknown[];
+                    expect(Array.isArray(items)).toBe(true);
                     await client.close();
                 });
 
                 it('reads a KV record via resources/read', async () => {
                     client = await createClientFn({ tools: ['storage'] });
                     const result = await client.readResource({
-                        uri: `apify://key-value-stores/${defaultKvId}/records/INPUT`,
+                        uri: `https://api.apify.com/v2/key-value-stores/${defaultKvId}/records/INPUT`,
                     });
                     const contents = result.contents[0] as { text?: string };
                     expect(contents.text).toContain('firstNumber');

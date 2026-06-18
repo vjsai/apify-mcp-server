@@ -8,30 +8,33 @@ Three files serving the MCP `resources/*` surface:
 - `resource_service.ts` — handles `ListResources` / `ListResourceTemplates` /
   read-resource requests. Takes an optional `apifyClient` on list/read; the server
   builds it from the per-request token (`_meta.apifyToken || options.token`).
-- `storage_resources.ts` — exposes Apify storage **data reads** as resources
-  (alongside, not replacing, the storage tools).
+- `api_resources.ts` — a thin MCP-resource proxy over the Apify API: any Apify API GET
+  endpoint is readable as a resource, identified by its real API URL.
 - `widgets.ts` — the registry of UI widgets (the metadata that maps a widget name to
   its resource); the widgets themselves are built in [`../web`](../web/AGENTS.md).
 
-## Storage resources (`storage_resources.ts`)
+## API resources (`api_resources.ts`)
 
-Custom `apify://` scheme, parsed by stripping the prefix, splitting the path on `/`,
-and reading the query with `URLSearchParams` (the `recordKey` is URL-decoded). Three
-templates (`resources/templates/list`):
+Resource URIs are real Apify API GET URLs (`https://api.apify.com/v2/...`), so URLs that
+Actors and tools return in their responses can be read back verbatim — no scheme to
+translate. `isApifyApiUri()` gates reads to the configured API origin
+(`getApifyAPIBaseUrl()`): the apify-client attaches the session token as an `Authorization`
+header to **every** outbound request, so we must never hand it a non-Apify host.
 
-- `apify://datasets/{datasetId}/items{?offset,limit,fields,omit,clean,desc}` — dataset items
-- `apify://key-value-stores/{keyValueStoreId}/keys{?exclusiveStartKey,limit}` — KVS key listing
-- `apify://key-value-stores/{keyValueStoreId}/records/{recordKey}` — a single KVS record
+`readApiResource()` is a generic proxy: `apifyClient.httpClient.call({ method: 'GET', responseType: 'arraybuffer' })`
+(do **not** set `forceBuffer` — that skips the client's Content-Type parsing). The parsed
+body is JSON → object, text/xml → string, anything else → `Buffer`, empty → `undefined`;
+we branch on that JS type, not the MIME type. Buffers over `KV_RECORD_MAX_INLINE_BYTES`
+(256 KB) link out — a JSON text block with the URL + size + type (`resources/read` has no
+`resource_link` content type) — instead of inlining base64. For a KVS record the URL is the
+store's signed `recordPublicUrl` (fetchable without a token); other endpoints fall back to the
+token-gated API URL. Errors never throw: a missing resource, bad token, or 5xx returns an
+explanatory `text` block.
 
-`resources/list` adds concrete URIs for the user's recent datasets/stores
-(`desc: true`, bounded). Contents are `application/json` for items/keys; records keep
-their `contentType` (binary → base64 `blob`). A binary record over
-`KV_RECORD_MAX_INLINE_BYTES` (256 KB) links out instead of inlining: a JSON text block
-with the record's public URL (`resources/read` has no `resource_link` content type),
-mirroring the `get-key-value-store-record` tool. Best-effort: no token / API error →
-list omits storage; an unreadable read returns an explanatory `text` block, never an
-error. Reuses the storage tools' arg-parsing helpers and 404→soft-fail pattern; it
-does **not** share their response builders (resources need `ReadResourceResult`).
+`resources/templates/list` advertises three common starting points (dataset items, KVS
+keys, KVS record); `resources/list` adds the user's recent datasets/stores as concrete API
+URLs (`desc: true`, bounded, dataset URI carries a default `limit`). Both are best-effort:
+no token / API error → those entries are omitted.
 
 ## Gotcha
 
